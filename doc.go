@@ -3,13 +3,13 @@ Package cron implements a cron spec parser and job runner.
 
 Installation
 
-To download the specific tagged release, run:
+To download this fork, run:
 
-	go get github.com/robfig/cron/v3@v3.0.0
+	go get github.com/gjongenelen/cron/v3@master
 
 Import it in your program as:
 
-	import "github.com/robfig/cron/v3"
+	import "github.com/gjongenelen/cron/v3"
 
 It requires Go 1.11 or later due to usage of Go Modules.
 
