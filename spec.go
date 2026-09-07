@@ -50,7 +50,21 @@ var (
 
 const (
 	// Set the top bit if a star was included in the expression.
-	starBit = 1 << 63
+	starBit = uint64(1) << 63
+
+	// The remaining high bits encode Quartz day-of-month modifiers. Regular
+	// day-of-month values only use bits 1 through 31.
+	lastDomFlag           = uint64(1) << 62
+	nearestWeekdayDomFlag = uint64(1) << 61
+	lastDomOffsetShift    = 56
+	lastDomOffsetMask     = uint64(31) << lastDomOffsetShift
+
+	// The remaining high bits encode Quartz day-of-week modifiers. Regular
+	// day-of-week values only use bits 0 through 6.
+	nthDowFlag  = uint64(1) << 62
+	nthDowShift = 59
+	nthDowMask  = uint64(7) << nthDowShift
+	lastDowFlag = uint64(1) << 58
 )
 
 // Next returns the next time this schedule is activated, greater than the given
@@ -178,11 +192,79 @@ WRAP:
 // restrictions are satisfied by the given time.
 func dayMatches(s *SpecSchedule, t time.Time) bool {
 	var (
-		domMatch bool = 1<<uint(t.Day())&s.Dom > 0
-		dowMatch bool = 1<<uint(t.Weekday())&s.Dow > 0
+		domMatch = dayOfMonthMatches(s.Dom, t)
+		dowMatch = dayOfWeekMatches(s.Dow, t)
 	)
 	if s.Dom&starBit > 0 || s.Dow&starBit > 0 {
 		return domMatch && dowMatch
 	}
 	return domMatch || dowMatch
+}
+
+func dayOfMonthMatches(field uint64, t time.Time) bool {
+	if field&(lastDomFlag|nearestWeekdayDomFlag) == 0 {
+		return 1<<uint(t.Day())&field > 0
+	}
+
+	lastDay := time.Date(t.Year(), t.Month()+1, 0, 0, 0, 0, 0, t.Location()).Day()
+
+	if field&lastDomFlag > 0 {
+		if field&nearestWeekdayDomFlag > 0 {
+			return t.Day() == nearestWeekday(t.Year(), t.Month(), lastDay, t.Location())
+		}
+		offset := int((field & lastDomOffsetMask) >> lastDomOffsetShift)
+		return t.Day() == lastDay-offset
+	}
+
+	if field&nearestWeekdayDomFlag > 0 {
+		target := 0
+		for day := dom.min; day <= dom.max; day++ {
+			if field&(1<<day) > 0 {
+				target = int(day)
+				break
+			}
+		}
+		if target == 0 || target > lastDay {
+			return false
+		}
+		return t.Day() == nearestWeekday(t.Year(), t.Month(), target, t.Location())
+	}
+
+	return false
+}
+
+func nearestWeekday(year int, month time.Month, day int, loc *time.Location) int {
+	date := time.Date(year, month, day, 0, 0, 0, 0, loc)
+	lastDay := time.Date(year, month+1, 0, 0, 0, 0, 0, loc).Day()
+
+	switch date.Weekday() {
+	case time.Saturday:
+		if day == 1 {
+			return day + 2
+		}
+		return day - 1
+	case time.Sunday:
+		if day == lastDay {
+			return day - 2
+		}
+		return day + 1
+	default:
+		return day
+	}
+}
+
+func dayOfWeekMatches(field uint64, t time.Time) bool {
+	if 1<<uint(t.Weekday())&field == 0 {
+		return false
+	}
+	if field&nthDowFlag > 0 {
+		nth := uint((field & nthDowMask) >> nthDowShift)
+		occurrence := uint((t.Day()-1)/7 + 1)
+		return occurrence == nth
+	}
+	if field&lastDowFlag > 0 {
+		lastDay := time.Date(t.Year(), t.Month()+1, 0, 0, 0, 0, 0, t.Location()).Day()
+		return t.Day()+7 > lastDay
+	}
+	return true
 }

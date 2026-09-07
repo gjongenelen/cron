@@ -44,9 +44,9 @@ A cron expression represents a set of times, using 5 space-separated fields.
 	----------   | ---------- | --------------  | --------------------------
 	Minutes      | Yes        | 0-59            | * / , -
 	Hours        | Yes        | 0-23            | * / , -
-	Day of month | Yes        | 1-31            | * / , - ?
+	Day of month | Yes        | 1-31            | * / , - ? L W
 	Month        | Yes        | 1-12 or JAN-DEC | * / , -
-	Day of week  | Yes        | 0-6 or SUN-SAT  | * / , - ?
+	Day of week  | Yes        | 0-6 or SUN-SAT  | * / , - ? L #
 
 Month and Day-of-week field values are case insensitive.  "SUN", "Sun", and
 "sun" are equally accepted.
@@ -104,6 +104,27 @@ Question mark ( ? )
 
 Question mark may be used instead of '*' for leaving either day-of-month or
 day-of-week blank.
+
+Hash ( # )
+
+Hash selects the nth occurrence of a day of the week within a month. For
+example, "MON#1" means the first Monday of the month and "FRI#3" means the
+third Friday. The occurrence must be between 1 and 5. A day-of-week field that
+uses # must contain exactly one expression.
+
+Last ( L )
+
+In the day-of-month field, L selects the last day of the month. An offset can
+be supplied: "L-3" selects three days before the last day. In the day-of-week
+field, "FRIL" selects the last Friday of the month. A bare L in the day-of-week
+field selects the last Saturday.
+
+Weekday ( W )
+
+In the day-of-month field, W selects the weekday nearest to the supplied day.
+For example, "15W" selects the weekday nearest to the 15th without crossing a
+month boundary. "LW" selects the last weekday of the month. A day-of-month
+field that uses W must contain exactly one expression.
 
 Predefined schedules
 

@@ -77,6 +77,101 @@ func TestField(t *testing.T) {
 	}
 }
 
+func TestDayOfMonthFieldModifiers(t *testing.T) {
+	tests := []struct {
+		expr     string
+		expected uint64
+	}{
+		{"L", lastDomFlag},
+		{"l-3", lastDomFlag | 3<<lastDomOffsetShift},
+		{"15W", 1<<15 | nearestWeekdayDomFlag},
+		{"lw", lastDomFlag | nearestWeekdayDomFlag},
+	}
+
+	for _, test := range tests {
+		t.Run(test.expr, func(t *testing.T) {
+			actual, err := getDayOfMonthField(test.expr)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if actual != test.expected {
+				t.Errorf("expected %b, got %b", test.expected, actual)
+			}
+		})
+	}
+}
+
+func TestDayOfMonthFieldModifierErrors(t *testing.T) {
+	tests := []string{
+		"L-31",
+		"L-",
+		"0W",
+		"32W",
+		"W",
+		"1-5W",
+		"1W,15W",
+	}
+
+	for _, expr := range tests {
+		t.Run(expr, func(t *testing.T) {
+			if _, err := getDayOfMonthField(expr); err == nil {
+				t.Errorf("expected an error parsing %q", expr)
+			}
+		})
+	}
+}
+
+func TestDayOfWeekFieldModifiers(t *testing.T) {
+	tests := []struct {
+		expr     string
+		expected uint64
+	}{
+		{"MON#1", 1<<1 | nthDowFlag | 1<<nthDowShift},
+		{"fri#3", 1<<5 | nthDowFlag | 3<<nthDowShift},
+		{"0#5", 1<<0 | nthDowFlag | 5<<nthDowShift},
+		{"FRIL", 1<<5 | lastDowFlag},
+		{"l", 1<<6 | lastDowFlag},
+	}
+
+	for _, test := range tests {
+		t.Run(test.expr, func(t *testing.T) {
+			actual, err := getDayOfWeekField(test.expr)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if actual != test.expected {
+				t.Errorf("expected %b, got %b", test.expected, actual)
+			}
+		})
+	}
+}
+
+func TestDayOfWeekFieldModifierErrors(t *testing.T) {
+	tests := []string{
+		"MON#0",
+		"MON#6",
+		"MON#",
+		"#1",
+		"MON#1#2",
+		"MON#1,TUE",
+		"MON,TUE#1",
+		"MON-FRI#1",
+		"7#1",
+		"MON,TUEL",
+		"MON-FRIL",
+		"MONLL",
+		"7L",
+	}
+
+	for _, expr := range tests {
+		t.Run(expr, func(t *testing.T) {
+			if _, err := getDayOfWeekField(expr); err == nil {
+				t.Errorf("expected an error parsing %q", expr)
+			}
+		})
+	}
+}
+
 func TestAll(t *testing.T) {
 	allBits := []struct {
 		r        bounds
@@ -125,6 +220,10 @@ func TestParseScheduleErrors(t *testing.T) {
 		{"@unrecognized", "unrecognized descriptor"},
 		{"* * * *", "expected 5 to 6 fields"},
 		{"", "empty spec string"},
+		{"0 0 12 * * MON#0", "between 1 and 5"},
+		{"0 0 12 * * MON#1,TUE", "exactly one expression"},
+		{"0 0 12 L-31 * *", "between 0 and 30"},
+		{"0 0 12 1W,15W * *", "exactly one expression"},
 	}
 	for _, c := range tests {
 		actual, err := secondParser.Parse(c.expr)

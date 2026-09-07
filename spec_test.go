@@ -54,6 +54,22 @@ func TestActivation(t *testing.T) {
 		{"Mon Jul 9 00:00 2012", "* * 1,15 * *", false},
 		{"Sun Jul 15 00:00 2012", "* * 1,15 * *", true},
 		{"Sun Jul 15 00:00 2012", "* * */2 * Sun", true},
+
+		// Quartz nth day-of-week modifier.
+		{"Mon Jul 2 12:00 2012", "0 12 * * MON#1", true},
+		{"Mon Jul 9 12:00 2012", "0 12 * * MON#1", false},
+		{"Fri Jul 20 12:00 2012", "0 12 * * FRI#3", true},
+		{"Fri Jul 27 12:00 2012", "0 12 * * FRI#3", false},
+
+		// Quartz last and nearest-weekday modifiers.
+		{"Tue Jul 31 12:00 2012", "0 12 L * *", true},
+		{"Mon Jul 30 12:00 2012", "0 12 L * *", false},
+		{"Sat Jul 28 12:00 2012", "0 12 L-3 * *", true},
+		{"Mon Jul 16 12:00 2012", "0 12 15W * *", true},
+		{"Sun Jul 15 12:00 2012", "0 12 15W * *", false},
+		{"Fri Sep 28 12:00 2012", "0 12 LW * *", true},
+		{"Fri Sep 28 12:00 2012", "0 12 * * FRIL", true},
+		{"Fri Sep 21 12:00 2012", "0 12 * * FRIL", false},
 	}
 
 	for _, test := range tests {
@@ -109,6 +125,20 @@ func TestNext(t *testing.T) {
 
 		// Leap year
 		{"Mon Jul 9 23:35 2012", "0 0 0 29 Feb ?", "Mon Feb 29 00:00 2016"},
+
+		// Quartz nth day-of-week modifier.
+		{"Sun Jul 1 00:00 2012", "0 0 12 ? * MON#1", "Mon Jul 2 12:00 2012"},
+		{"Tue Jul 10 00:00 2012", "0 0 12 * * MON#1", "Mon Aug 6 12:00 2012"},
+		{"Tue Jan 1 00:00 2019", "0 0 12 * * MON#5", "Mon Apr 29 12:00 2019"},
+
+		// Quartz last and nearest-weekday modifiers.
+		{"Sun Jul 1 00:00 2012", "0 0 12 L * ?", "Tue Jul 31 12:00 2012"},
+		{"Sun Jul 1 00:00 2012", "0 0 12 L-3 * ?", "Sat Jul 28 12:00 2012"},
+		{"Sun Jul 1 00:00 2012", "0 0 12 15W * ?", "Mon Jul 16 12:00 2012"},
+		{"Fri Aug 31 13:00 2012", "0 0 12 1W * ?", "Mon Sep 3 12:00 2012"},
+		{"Sat Sep 1 00:00 2012", "0 0 12 LW * ?", "Fri Sep 28 12:00 2012"},
+		{"Sat Sep 1 00:00 2012", "0 0 12 ? * FRIL", "Fri Sep 28 12:00 2012"},
+		{"Thu Jan 31 13:00 2013", "0 0 12 31W * ?", "Fri Mar 29 12:00 2013"},
 
 		// Daylight savings time 2am EST (-5) -> 3am EDT (-4)
 		{"2012-03-11T00:00:00-0500", "TZ=America/New_York 0 30 2 11 Mar ?", "2013-03-11T02:30:00-0400"},

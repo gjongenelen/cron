@@ -56,18 +56,17 @@ type Parser struct {
 //
 // Examples
 //
-//  // Standard parser without descriptors
-//  specParser := NewParser(Minute | Hour | Dom | Month | Dow)
-//  sched, err := specParser.Parse("0 0 15 */3 *")
+//	// Standard parser without descriptors
+//	specParser := NewParser(Minute | Hour | Dom | Month | Dow)
+//	sched, err := specParser.Parse("0 0 15 */3 *")
 //
-//  // Same as above, just excludes time fields
-//  specParser := NewParser(Dom | Month | Dow)
-//  sched, err := specParser.Parse("15 */3 *")
+//	// Same as above, just excludes time fields
+//	specParser := NewParser(Dom | Month | Dow)
+//	sched, err := specParser.Parse("15 */3 *")
 //
-//  // Same as above, just makes Dow optional
-//  specParser := NewParser(Dom | Month | DowOptional)
-//  sched, err := specParser.Parse("15 */3")
-//
+//	// Same as above, just makes Dow optional
+//	specParser := NewParser(Dom | Month | DowOptional)
+//	sched, err := specParser.Parse("15 */3")
 func NewParser(options ParseOption) Parser {
 	optionals := 0
 	if options&DowOptional > 0 {
@@ -128,14 +127,30 @@ func (p Parser) Parse(spec string) (Schedule, error) {
 		bits, err = getField(field, r)
 		return bits
 	}
+	dayOfMonthField := func(field string) uint64 {
+		if err != nil {
+			return 0
+		}
+		var bits uint64
+		bits, err = getDayOfMonthField(field)
+		return bits
+	}
+	dayOfWeekField := func(field string) uint64 {
+		if err != nil {
+			return 0
+		}
+		var bits uint64
+		bits, err = getDayOfWeekField(field)
+		return bits
+	}
 
 	var (
 		second     = field(fields[0], seconds)
 		minute     = field(fields[1], minutes)
 		hour       = field(fields[2], hours)
-		dayofmonth = field(fields[3], dom)
+		dayofmonth = dayOfMonthField(fields[3])
 		month      = field(fields[4], months)
-		dayofweek  = field(fields[5], dow)
+		dayofweek  = dayOfWeekField(fields[5])
 	)
 	if err != nil {
 		return nil, err
@@ -150,6 +165,109 @@ func (p Parser) Parse(spec string) (Schedule, error) {
 		Dow:      dayofweek,
 		Location: loc,
 	}, nil
+}
+
+// getDayOfMonthField returns the bits for a day-of-month field. In addition to
+// the regular field syntax, it accepts Quartz L and W modifiers:
+//
+//	L     last day of the month
+//	L-n   nth day before the last day of the month
+//	nW    weekday nearest to day n
+//	LW    last weekday of the month
+func getDayOfMonthField(field string) (uint64, error) {
+	upper := strings.ToUpper(field)
+
+	if upper == "L" {
+		return lastDomFlag, nil
+	}
+	if upper == "LW" {
+		return lastDomFlag | nearestWeekdayDomFlag, nil
+	}
+	if strings.HasPrefix(upper, "L-") {
+		offset, err := mustParseInt(field[2:])
+		if err != nil {
+			return 0, err
+		}
+		if offset > 30 {
+			return 0, fmt.Errorf("offset after L- must be between 0 and 30: %s", field)
+		}
+		return lastDomFlag | uint64(offset)<<lastDomOffsetShift, nil
+	}
+	if strings.HasSuffix(upper, "W") {
+		if strings.Contains(field, ",") {
+			return 0, fmt.Errorf("day-of-month field with W must contain exactly one expression: %s", field)
+		}
+		day, err := mustParseInt(field[:len(field)-1])
+		if err != nil {
+			return 0, err
+		}
+		if day < dom.min || day > dom.max {
+			return 0, fmt.Errorf("day used with W must be between %d and %d: %s", dom.min, dom.max, field)
+		}
+		return 1<<day | nearestWeekdayDomFlag, nil
+	}
+
+	return getField(field, dom)
+}
+
+// getDayOfWeekField returns the bits for a day-of-week field. In addition to
+// the regular field syntax, it accepts the Quartz "day#nth" and "dayL"
+// modifiers. For example, "MON#1" means the first Monday of the month and
+// "FRIL" means the last Friday of the month.
+func getDayOfWeekField(field string) (uint64, error) {
+	upper := strings.ToUpper(field)
+	if !strings.Contains(field, "#") && !strings.HasSuffix(upper, "L") {
+		return getField(field, dow)
+	}
+	if strings.HasSuffix(upper, "L") {
+		if strings.Contains(field, ",") {
+			return 0, fmt.Errorf("day-of-week field with L must contain exactly one expression: %s", field)
+		}
+
+		dayExpr := field[:len(field)-1]
+		day := dow.max // A bare L means Saturday, matching Quartz's bare 7/SAT.
+		var err error
+		if dayExpr != "" {
+			day, err = parseIntOrName(dayExpr, dow.names)
+			if err != nil {
+				return 0, err
+			}
+		}
+		if day < dow.min || day > dow.max {
+			return 0, fmt.Errorf("day of week used with L must be between %d and %d: %s", dow.min, dow.max, field)
+		}
+		return 1<<day | lastDowFlag, nil
+	}
+
+	if strings.Contains(field, ",") {
+		return 0, fmt.Errorf("day-of-week field with # must contain exactly one expression: %s", field)
+	}
+
+	parts := strings.Split(field, "#")
+	if len(parts) != 2 {
+		return 0, fmt.Errorf("day-of-week field must contain exactly one #: %s", field)
+	}
+
+	day, err := parseIntOrName(parts[0], dow.names)
+	if err != nil {
+		return 0, err
+	}
+	if day < dow.min {
+		return 0, fmt.Errorf("day of week (%d) below minimum (%d): %s", day, dow.min, field)
+	}
+	if day > dow.max {
+		return 0, fmt.Errorf("day of week (%d) above maximum (%d): %s", day, dow.max, field)
+	}
+
+	nth, err := mustParseInt(parts[1])
+	if err != nil {
+		return 0, err
+	}
+	if nth < 1 || nth > 5 {
+		return 0, fmt.Errorf("occurrence after # must be between 1 and 5: %s", field)
+	}
+
+	return 1<<day | nthDowFlag | uint64(nth)<<nthDowShift, nil
 }
 
 // normalizeFields takes a subset set of the time fields and returns the full set
@@ -247,7 +365,9 @@ func getField(field string, r bounds) (uint64, error) {
 }
 
 // getRange returns the bits indicated by the given expression:
-//   number | number "-" number [ "/" number ]
+//
+//	number | number "-" number [ "/" number ]
+//
 // or error parsing range.
 func getRange(expr string, r bounds) (uint64, error) {
 	var (
